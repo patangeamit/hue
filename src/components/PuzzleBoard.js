@@ -1,5 +1,7 @@
 import React from "react"
 import {
+  Animated,
+  Easing,
   Pressable,
   StyleSheet,
   View,
@@ -7,8 +9,8 @@ import {
 } from "react-native"
 import { palette } from "../theme/colors"
 
-const BOARD_PADDING = 16
-const BOARD_GAP = 6
+const BOARD_PADDING = 14
+const BOARD_GAP = 0
 
 function getFixedIndexSet(size) {
   const lastIndex = size * size - 1
@@ -50,8 +52,8 @@ function blendColors(colorA, colorB, ratio) {
   })
 }
 
-export function createSolvedTiles(size = 4) {
-  const { topLeft, topRight, bottomLeft, bottomRight } = palette.corners
+export function createSolvedTiles(size = 4, corners = palette.corners) {
+  const { topLeft, topRight, bottomLeft, bottomRight } = corners
   const fixedIndexes = getFixedIndexSet(size)
   const tiles = []
 
@@ -81,53 +83,136 @@ export default function PuzzleBoard({
   selectedTileId,
   hintedTileId,
   onTilePress,
+  rectangular = true,
 }) {
   const { width } = useWindowDimensions()
-  const boardSize = Math.min(width - 48, 340)
-  const contentSize = boardSize - BOARD_PADDING * 2
-  const tileSize = (contentSize - BOARD_GAP * (size - 1)) / size
-  const rows = Array.from({ length: size }, (_, rowIndex) =>
-    tiles.slice(rowIndex * size, rowIndex * size + size)
+  const boardSize = Math.min(width - 24, 380)
+  const boardWidth = boardSize
+  const boardHeight = rectangular ? Math.round(boardSize * 1.18) : boardSize
+  const contentWidth = boardWidth - BOARD_PADDING * 2
+  const contentHeight = boardHeight - BOARD_PADDING * 2
+  const tileWidth = (contentWidth - BOARD_GAP * (size - 1)) / size
+  const tileHeight = (contentHeight - BOARD_GAP * (size - 1)) / size
+  const animatedPositionsRef = React.useRef({})
+  const hasMountedRef = React.useRef(false)
+  const [animatingTileIds, setAnimatingTileIds] = React.useState([])
+
+  const getTileCoordinates = React.useCallback(
+    (index) => {
+      const row = Math.floor(index / size)
+      const column = index % size
+
+      return {
+        x: column * (tileWidth + BOARD_GAP),
+        y: row * (tileHeight + BOARD_GAP),
+      }
+    },
+    [size, tileHeight, tileWidth]
   )
 
-  return (
-    <View style={[styles.boardShell, { width: boardSize, height: boardSize }]}>
-      <View style={[styles.board, { width: contentSize, height: contentSize }]}>
-        {rows.map((row, rowIndex) => (
-          <View
-            key={`row-${rowIndex}`}
-            style={[styles.row, rowIndex < size - 1 && styles.rowSpacing]}
-          >
-            {row.map((tile, columnIndex) => {
-              const index = rowIndex * size + columnIndex
-              const isSelected = tile.id === selectedTileId
-              const isHinted = tile.id === hintedTileId
+  tiles.forEach((tile, index) => {
+    if (!animatedPositionsRef.current[tile.id]) {
+      const { x, y } = getTileCoordinates(index)
+      animatedPositionsRef.current[tile.id] = {
+        x: new Animated.Value(x),
+        y: new Animated.Value(y),
+      }
+    }
+  })
 
-              return (
-                <Pressable
-                  disabled={tile.isFixed}
-                  key={tile.id}
-                  onPress={() => onTilePress(index)}
-                  style={({ pressed }) => [
-                    styles.tile,
-                    {
-                      backgroundColor: tile.color,
-                      height: tileSize,
-                      width: tileSize,
-                    },
-                    columnIndex < size - 1 && styles.tileSpacing,
-                    tile.isFixed && styles.tileFixed,
-                    isSelected && styles.tileSelected,
-                    isHinted && styles.tileHinted,
-                    pressed && !tile.isFixed && styles.tilePressed,
-                  ]}
-                >
-                  {tile.isFixed ? <View style={styles.fixedMarker} /> : null}
-                </Pressable>
-              )
-            })}
-          </View>
-        ))}
+  React.useEffect(() => {
+    const movingTileIds = []
+    const animations = tiles.map((tile, index) => {
+      const position = animatedPositionsRef.current[tile.id]
+      const { x, y } = getTileCoordinates(index)
+
+      if (!hasMountedRef.current) {
+        position.x.setValue(x)
+        position.y.setValue(y)
+        return null
+      }
+
+      const currentX = position.x.__getValue()
+      const currentY = position.y.__getValue()
+
+      if (currentX === x && currentY === y) {
+        return null
+      }
+
+      movingTileIds.push(tile.id)
+
+      return Animated.parallel([
+        Animated.timing(position.x, {
+          duration: 260,
+          easing: Easing.out(Easing.cubic),
+          toValue: x,
+          useNativeDriver: true,
+        }),
+        Animated.timing(position.y, {
+          duration: 260,
+          easing: Easing.out(Easing.cubic),
+          toValue: y,
+          useNativeDriver: true,
+        }),
+      ])
+    }).filter(Boolean)
+
+    if (animations.length > 0) {
+      setAnimatingTileIds(movingTileIds)
+      Animated.parallel(animations).start(() => {
+        setAnimatingTileIds([])
+      })
+    }
+
+    hasMountedRef.current = true
+  }, [getTileCoordinates, tiles])
+
+  return (
+    <View style={[styles.boardShell, { width: boardWidth, height: boardHeight }]}>
+      <View style={[styles.board, { width: contentWidth, height: contentHeight }]}>
+        {tiles.map((tile, index) => {
+          const isSelected = tile.id === selectedTileId
+          const isHinted = tile.id === hintedTileId
+          const isAnimating = animatingTileIds.includes(tile.id)
+          const position = animatedPositionsRef.current[tile.id]
+
+          return (
+            <Animated.View
+              key={tile.id}
+              style={[
+                styles.tileLayer,
+                {
+                  height: tileHeight,
+                  transform: [
+                    { translateX: position.x },
+                    { translateY: position.y },
+                  ],
+                  width: tileWidth,
+                },
+                isAnimating && styles.tileLayerActive,
+              ]}
+            >
+              <Pressable
+                disabled={tile.isFixed}
+                onPress={() => onTilePress(index)}
+                style={({ pressed }) => [
+                  styles.tile,
+                  {
+                    backgroundColor: tile.color,
+                    height: tileHeight,
+                    width: tileWidth,
+                  },
+                  tile.isFixed && styles.tileFixed,
+                  isSelected && styles.tileSelected,
+                  isHinted && styles.tileHinted,
+                  pressed && !tile.isFixed && styles.tilePressed,
+                ]}
+              >
+                {tile.isFixed ? <View style={styles.fixedMarker} /> : null}
+              </Pressable>
+            </Animated.View>
+          )
+        })}
       </View>
     </View>
   )
@@ -148,25 +233,26 @@ const styles = StyleSheet.create({
   },
   board: {
     justifyContent: "center",
+    position: "relative",
   },
-  row: {
-    flexDirection: "row",
+  tileLayer: {
+    left: 0,
+    position: "absolute",
+    top: 0,
+    zIndex: 1,
   },
-  rowSpacing: {
-    marginBottom: BOARD_GAP,
+  tileLayerActive: {
+    elevation: 12,
+    zIndex: 30,
   },
   tile: {
     alignItems: "center",
-    borderRadius: 14,
     justifyContent: "center",
     shadowColor: "#8A8A8A",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 2,
-  },
-  tileSpacing: {
-    marginRight: BOARD_GAP,
   },
   tileFixed: {
     shadowOpacity: 0.04,

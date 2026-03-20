@@ -3,6 +3,7 @@ import React from "react"
 import { NavigationContainer, DefaultTheme } from "@react-navigation/native"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import AppNavigator from "./src/navigation/AppNavigator"
+import { CurrencyProvider } from "./src/state/CurrencyContext"
 
 const navigationTheme = {
   ...DefaultTheme,
@@ -18,10 +19,12 @@ const navigationTheme = {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <NavigationContainer theme={navigationTheme}>
-        <AppNavigator />
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <CurrencyProvider>
+      <SafeAreaProvider>
+        <NavigationContainer theme={navigationTheme}>
+          <AppNavigator />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </CurrencyProvider>
   )
 }

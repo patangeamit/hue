@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react"
 import {
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -10,9 +11,9 @@ import { Ionicons } from "@expo/vector-icons"
 import ControlButton from "../components/ControlButton"
 import LevelCard from "../components/LevelCard"
 import PuzzleBoard, { createSolvedTiles } from "../components/PuzzleBoard"
+import { getLevelById, levels } from "../data/levels"
+import { useCurrency } from "../state/CurrencyContext"
 import { palette } from "../theme/colors"
-
-const GRID_SIZE = 4
 
 function randomIndex(max) {
   return Math.floor(Math.random() * max)
@@ -76,13 +77,50 @@ function IconAction({ icon, onPress }) {
   )
 }
 
-export default function HomeScreen({ navigation }) {
-  const solvedTiles = useMemo(() => createSolvedTiles(GRID_SIZE), [])
-  const [initialTiles, setInitialTiles] = useState(() => createPuzzleTiles(solvedTiles))
-  const [tiles, setTiles] = useState(initialTiles)
+function DiamondBadge({ amount }) {
+  return (
+    <View style={styles.diamondBadge}>
+      <Ionicons color="#64A8D8" name="diamond-outline" size={16} />
+      <Text style={styles.diamondText}>{amount}</Text>
+    </View>
+  )
+}
+
+export default function HomeScreen({ navigation, route }) {
+  const { addDiamonds, diamonds } = useCurrency()
+  const levelId = route.params?.levelId ?? levels[0].id
+  const level = useMemo(() => getLevelById(levelId), [levelId])
+  const solvedTiles = useMemo(
+    () => createSolvedTiles(level.size, level.corners),
+    [level]
+  )
+  const [initialTiles, setInitialTiles] = useState(() => solvedTiles)
+  const [tiles, setTiles] = useState(solvedTiles)
   const [selectedIndex, setSelectedIndex] = useState(null)
   const [hintedTileId, setHintedTileId] = useState(null)
   const [history, setHistory] = useState([])
+  const [started, setStarted] = useState(false)
+  const [showWinScreen, setShowWinScreen] = useState(false)
+  const [rewardGranted, setRewardGranted] = useState(false)
+
+  React.useEffect(() => {
+    setInitialTiles(solvedTiles)
+    setTiles(solvedTiles)
+    setSelectedIndex(null)
+    setHintedTileId(null)
+    setHistory([])
+    setStarted(false)
+    setShowWinScreen(false)
+    setRewardGranted(false)
+  }, [level, solvedTiles])
+
+  React.useEffect(() => {
+    if (started && isSolved(tiles) && !rewardGranted) {
+      addDiamonds(level.reward)
+      setRewardGranted(true)
+      setShowWinScreen(true)
+    }
+  }, [addDiamonds, level.reward, rewardGranted, started, tiles])
 
   const progress = useMemo(() => {
     const orderedCount = tiles.filter(
@@ -93,6 +131,10 @@ export default function HomeScreen({ navigation }) {
   }, [tiles])
 
   const handleTilePress = (index) => {
+    if (!started) {
+      return
+    }
+
     if (tiles[index].isFixed) {
       return
     }
@@ -108,7 +150,6 @@ export default function HomeScreen({ navigation }) {
       setSelectedIndex(null)
       return
     }
-
     setHistory((currentHistory) => [...currentHistory, tiles])
     setTiles((currentTiles) => swapTiles(currentTiles, selectedIndex, index))
     setSelectedIndex(null)
@@ -118,24 +159,50 @@ export default function HomeScreen({ navigation }) {
     setHistory([])
     setSelectedIndex(null)
     setHintedTileId(null)
-    setTiles(initialTiles)
+    setStarted(false)
+    setShowWinScreen(false)
+    setRewardGranted(false)
+    setTiles([...initialTiles])
   }
 
-  const handleShuffle = () => {
-    const nextPuzzle = createPuzzleTiles(solvedTiles)
+  const handleStart = () => {
+    const nextPuzzle = createPuzzleTiles(solvedTiles, level.swapCount)
     setHistory([])
     setSelectedIndex(null)
     setHintedTileId(null)
     setInitialTiles(nextPuzzle)
     setTiles(nextPuzzle)
+    setStarted(true)
+    setShowWinScreen(false)
+    setRewardGranted(false)
+  }
+
+  const handleShuffle = () => {
+    const nextPuzzle = createPuzzleTiles(solvedTiles, level.swapCount)
+    setHistory([])
+    setSelectedIndex(null)
+    setHintedTileId(null)
+    setInitialTiles(nextPuzzle)
+    setTiles(nextPuzzle)
+    setStarted(true)
+    setShowWinScreen(false)
+    setRewardGranted(false)
   }
 
   const handleHint = () => {
+    if (!started) {
+      return
+    }
+
     setSelectedIndex(null)
     setHintedTileId(findHintTileId(tiles))
   }
 
   const handleUndo = () => {
+    if (!started) {
+      return
+    }
+
     const previous = history[history.length - 1]
     if (!previous) {
       return
@@ -145,6 +212,7 @@ export default function HomeScreen({ navigation }) {
     setHistory((currentHistory) => currentHistory.slice(0, -1))
     setSelectedIndex(null)
     setHintedTileId(null)
+    setShowWinScreen(false)
   }
 
   return (
@@ -156,16 +224,19 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.topBar}>
           <IconAction
             icon="home-outline"
-            onPress={() => navigation.navigate("Home")}
+            onPress={() => navigation.navigate("LevelSelect")}
           />
-          <Text style={styles.headerTitle}>Chromatic Calm</Text>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Chromatic Calm</Text>
+            <DiamondBadge amount={diamonds} />
+          </View>
           <IconAction icon="refresh" onPress={handleReset} />
         </View>
 
         <View style={styles.hero}>
-          <LevelCard />
+          <LevelCard level={level.id} subtitle={level.name} />
           <Text style={styles.helperText}>
-            Fixed anchors stay in place. Tap two free tiles to restore the gradient.
+            {level.subtitle} Fixed anchors stay in place. Tap two free tiles to restore the gradient.
           </Text>
         </View>
 
@@ -174,14 +245,34 @@ export default function HomeScreen({ navigation }) {
             hintedTileId={hintedTileId}
             onTilePress={handleTilePress}
             selectedTileId={selectedIndex === null ? null : tiles[selectedIndex].id}
-            size={GRID_SIZE}
+            size={level.size}
             tiles={tiles}
           />
 
+          <View style={styles.startButtonSlot}>
+            {!started ? (
+              <Pressable
+                onPress={handleStart}
+                style={({ pressed }) => [
+                  styles.startButton,
+                  pressed && styles.startButtonPressed,
+                ]}
+              >
+                <Text style={styles.startButtonLabel}>Start Level</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
           <View style={styles.metaRow}>
-            <Text style={styles.metaText}>{progress}% aligned</Text>
             <Text style={styles.metaText}>
-              {isSolved(tiles) ? "Gradient restored" : "Soft shuffle"}
+              {started ? `${progress}% aligned` : "Preview ready"}
+            </Text>
+            <Text style={styles.metaText}>
+              {!started
+                ? "Tap start to shuffle"
+                : isSolved(tiles)
+                  ? "Gradient restored"
+                  : "Soft shuffle"}
             </Text>
           </View>
         </View>
@@ -194,6 +285,47 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
       </View>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setShowWinScreen(false)}
+        transparent
+        visible={showWinScreen}
+      >
+        <View style={styles.winOverlay}>
+          <View style={styles.winCard}>
+            <Text style={styles.winEyebrow}>Level Complete</Text>
+            <Text style={styles.winTitle}>{level.name}</Text>
+            <Text style={styles.winText}>
+              The gradient is back in harmony. You earned {level.reward} diamonds.
+            </Text>
+            <Pressable
+              onPress={() => {
+                setShowWinScreen(false)
+                navigation.navigate("LevelSelect")
+              }}
+              style={({ pressed }) => [
+                styles.winPrimaryButton,
+                pressed && styles.winButtonPressed,
+              ]}
+            >
+              <Text style={styles.winPrimaryLabel}>Back To Levels</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setShowWinScreen(false)
+                handleShuffle()
+              }}
+              style={({ pressed }) => [
+                styles.winSecondaryButton,
+                pressed && styles.winButtonPressed,
+              ]}
+            >
+              <Text style={styles.winSecondaryLabel}>Shuffle Again</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -235,6 +367,10 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     width: "100%",
   },
+  headerCenter: {
+    alignItems: "center",
+    gap: 8,
+  },
   iconButton: {
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.34)",
@@ -252,6 +388,21 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     letterSpacing: 2.2,
     textTransform: "uppercase",
+  },
+  diamondBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.3)",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  diamondText: {
+    color: palette.textPrimary,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
   hero: {
     alignItems: "center",
@@ -271,6 +422,29 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: "100%",
   },
+  startButtonSlot: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 74,
+    width: "100%",
+  },
+  startButton: {
+    backgroundColor: "rgba(94,86,79,0.92)",
+    borderRadius: 999,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+  },
+  startButtonPressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.985 }],
+  },
+  startButtonLabel: {
+    color: "#F7F3EC",
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
   metaRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -286,6 +460,71 @@ const styles = StyleSheet.create({
   bottomArea: {
     paddingTop: 16,
     width: "100%",
+  },
+  winOverlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(71, 65, 58, 0.28)",
+    flex: 1,
+    justifyContent: "center",
+    padding: 24,
+  },
+  winCard: {
+    alignItems: "center",
+    backgroundColor: "rgba(247,243,236,0.96)",
+    borderRadius: 30,
+    paddingHorizontal: 28,
+    paddingVertical: 30,
+    width: "100%",
+  },
+  winEyebrow: {
+    color: palette.textMuted,
+    fontSize: 12,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+  winTitle: {
+    color: palette.textPrimary,
+    fontSize: 28,
+    fontWeight: "400",
+    marginTop: 10,
+  },
+  winText: {
+    color: palette.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 10,
+    textAlign: "center",
+  },
+  winPrimaryButton: {
+    backgroundColor: "rgba(94,86,79,0.94)",
+    borderRadius: 999,
+    marginTop: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    width: "100%",
+  },
+  winPrimaryLabel: {
+    color: "#F7F3EC",
+    fontSize: 14,
+    fontWeight: "600",
+    letterSpacing: 0.6,
+    textAlign: "center",
+    textTransform: "uppercase",
+  },
+  winSecondaryButton: {
+    marginTop: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  winSecondaryLabel: {
+    color: palette.textMuted,
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.3,
+    textTransform: "uppercase",
+  },
+  winButtonPressed: {
+    opacity: 0.82,
   },
   controls: {
     alignItems: "center",
