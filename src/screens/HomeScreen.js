@@ -71,7 +71,7 @@ export default function HomeScreen({ navigation }) {
   const menuLinks = [
     {
       label: "Level Select",
-      onPress: () => navigation.navigate("LevelSelect"),
+      onPress: () => navigation.push("LevelSelect"),
     },
     {
       label: "Credits",
@@ -106,7 +106,7 @@ export default function HomeScreen({ navigation }) {
 
           <TopSheetMenu
             links={menuLinks}
-            onPlusPress={() => navigation.navigate("LevelSelect")}
+            onPlusPress={() => navigation.push("LevelSelect")}
             primaryActions={menuPrimaryActions}
             secondaryAction={{ label: "Close" }}
             settings={menuSettings}
@@ -126,7 +126,7 @@ export default function HomeScreen({ navigation }) {
         </View>
 
         <Pressable
-          onPress={() => navigation.navigate("LevelSelect")}
+          onPress={() => navigation.push("LevelSelect")}
           style={({ pressed }) => [
             styles.playButton,
             pressed && styles.playButtonPressed,

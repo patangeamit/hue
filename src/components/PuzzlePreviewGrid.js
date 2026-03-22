@@ -2,7 +2,7 @@ import React from "react"
 import { StyleSheet, View } from "react-native"
 import { createSolvedTiles } from "./PuzzleBoard"
 
-export default function PuzzlePreviewGrid({
+const PuzzlePreviewGrid = React.memo(function PuzzlePreviewGrid({
   corners,
   dimension,
   gap = 0,
@@ -54,7 +54,9 @@ export default function PuzzlePreviewGrid({
       })}
     </View>
   )
-}
+})
+
+export default PuzzlePreviewGrid
 
 const styles = StyleSheet.create({
   grid: {

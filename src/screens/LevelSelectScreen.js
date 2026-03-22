@@ -15,7 +15,7 @@ import { levels } from "../data/levels"
 import { useCurrency } from "../state/CurrencyContext"
 import { palette } from "../theme/colors"
 
-function PuzzlePreview({ level, width }) {
+const PuzzlePreview = React.memo(function PuzzlePreview({ level, width }) {
   const previewWidth = Math.min(width - 126, 250)
 
   return (
@@ -30,13 +30,19 @@ function PuzzlePreview({ level, width }) {
       />
     </View>
   )
-}
+})
 
-function LevelSlide({ level, navigation, width }) {
+const LevelSlide = React.memo(function LevelSlide({
+  isCleared,
+  isLocked,
+  level,
+  navigation,
+  width,
+}) {
   return (
     <View style={[styles.slide, { width }]}>
       <View style={styles.slideInner}>
-        <View style={styles.card}>
+        <View style={[styles.card, isLocked && styles.cardLocked]}>
           <View style={styles.cardGlowLarge} />
           <View style={styles.cardGlowSmall} />
 
@@ -55,34 +61,64 @@ function LevelSlide({ level, navigation, width }) {
               <Ionicons color="#64A8D8" name="diamond-outline" size={14} />
               <Text style={styles.metaPillText}>{level.reward}</Text>
             </View>
+            {isCleared ? (
+              <View style={styles.metaPill}>
+                <Text style={styles.metaPillText}>Cleared</Text>
+              </View>
+            ) : null}
           </View>
 
           <Pressable
-            onPress={() => navigation.navigate("Game", { levelId: level.id })}
+            disabled={isLocked}
+            onPress={() => navigation.push("Game", { levelId: level.id })}
             style={({ pressed }) => [
-              styles.playButton,
+              isLocked ? styles.lockedButton : styles.playButton,
               pressed && styles.playButtonPressed,
             ]}
           >
-            <Text style={styles.playButtonText}>Play</Text>
-            <Ionicons color="#F4EEDB" name="arrow-forward" size={18} />
+            <Text style={isLocked ? styles.lockedButtonText : styles.playButtonText}>
+              {isLocked ? "Locked" : "Play"}
+            </Text>
+            <Ionicons
+              color={isLocked ? palette.textPrimary : "#F4EEDB"}
+              name={isLocked ? "lock-closed" : "arrow-forward"}
+              size={18}
+            />
           </Pressable>
         </View>
       </View>
     </View>
   )
-}
+})
 
 export default function LevelSelectScreen({ navigation }) {
-  const { diamonds, isMusicEnabled, toggleMusic } = useCurrency()
+  const {
+    diamonds,
+    highestUnlockedLevelId,
+    isLevelCleared,
+    isLevelUnlocked,
+    isMusicEnabled,
+    toggleMusic,
+  } = useCurrency()
   const { width } = useWindowDimensions()
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true)
   const [showScores, setShowScores] = React.useState(true)
 
   const handleRandomLevel = React.useCallback(() => {
-    const randomLevel = levels[Math.floor(Math.random() * levels.length)]
-    console.log(levels)
-    navigation.navigate("Game", { levelId: randomLevel.id })
+    const unlockedLevels = levels.filter((level) => isLevelUnlocked(level.id))
+    const randomLevel =
+      unlockedLevels[Math.floor(Math.random() * unlockedLevels.length)] ??
+      levels[0]
+    navigation.push("Game", { levelId: randomLevel.id })
+  }, [isLevelUnlocked, navigation])
+
+  const handleBackHome = React.useCallback(() => {
+    if (navigation.canGoBack()) {
+      navigation.goBack()
+      return
+    }
+
+    navigation.navigate("Home")
   }, [navigation])
 
   const menuSettings = [
@@ -110,14 +146,14 @@ export default function LevelSelectScreen({ navigation }) {
     },
     {
       label: "Back Home",
-      onPress: () => navigation.navigate("Home"),
+      onPress: handleBackHome,
     },
   ]
 
   const menuLinks = [
     {
       label: "Home",
-      onPress: () => navigation.navigate("Home"),
+      onPress: handleBackHome,
     },
     {
       label: "Credits",
@@ -139,18 +175,35 @@ export default function LevelSelectScreen({ navigation }) {
     { icon: "logo-instagram", onPress: () => {} },
   ]
 
+  const renderLevelSlide = React.useCallback(
+    ({ item }) => (
+      <LevelSlide
+        isCleared={isLevelCleared(item.id)}
+        isLocked={!isLevelUnlocked(item.id)}
+        level={item}
+        navigation={navigation}
+        width={width}
+      />
+    ),
+    [isLevelCleared, isLevelUnlocked, navigation, width]
+  )
+
+  const getItemLayout = React.useCallback(
+    (_, index) => ({
+      index,
+      length: width,
+      offset: width * index,
+    }),
+    [width]
+  )
+
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
       <View style={styles.backgroundGlowLarge} />
       <View style={styles.backgroundGlowSmall} />
 
       <View style={styles.container}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.headerTitle}>Levels</Text>
-            <Text style={styles.headerSubtitle}>Choose a palette.</Text>
-          </View>
-
+        <View style={styles.menuHeaderWrap}>
           <TopSheetMenu
             links={menuLinks}
             onPlusPress={handleRandomLevel}
@@ -159,26 +212,36 @@ export default function LevelSelectScreen({ navigation }) {
             settings={menuSettings}
             socialActions={menuSocialActions}
             stats={[
-              { color: "#E59A9E", icon: "heart-outline", value: 31 },
+              { color: "#E59A9E", icon: "checkmark-circle-outline", value: highestUnlockedLevelId },
               { color: "#64A8D8", icon: "diamond-outline", value: diamonds },
             ]}
             title="Menu"
+            triggerMode="header"
           />
+        </View>
+        <View style={styles.headerBlock}>
+          <View style={styles.titleWrap}>
+            <Text style={styles.headerTitle}>Levels</Text>
+            <Text style={styles.headerSubtitle}>Choose a palette.</Text>
+          </View>
         </View>
 
         <FlatList
           data={levels}
           decelerationRate="fast"
+          getItemLayout={getItemLayout}
           horizontal
+          initialNumToRender={1}
           keyExtractor={(level) => level.id}
+          maxToRenderPerBatch={2}
           pagingEnabled
-          renderItem={({ item }) => (
-            <LevelSlide level={item} navigation={navigation} width={width} />
-          )}
+          removeClippedSubviews
+          renderItem={renderLevelSlide}
           showsHorizontalScrollIndicator={false}
           snapToAlignment="start"
           snapToInterval={width}
           style={styles.carousel}
+          windowSize={3}
         />
       </View>
     </SafeAreaView>
@@ -193,6 +256,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingBottom: 20,
+  },
+  menuHeaderWrap: {
+    paddingTop: 10,
   },
   backgroundGlowLarge: {
     backgroundColor: "rgba(255,255,255,0.26)",
@@ -212,12 +278,11 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: 180,
   },
-  headerRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
+  headerBlock: {
     paddingHorizontal: 24,
-    paddingTop: 10,
+  },
+  titleWrap: {
+    marginTop: 18,
   },
   headerTitle: {
     color: palette.textPrimary,
@@ -257,6 +322,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 24,
     elevation: 5,
+  },
+  cardLocked: {
+    opacity: 0.72,
   },
   cardGlowLarge: {
     backgroundColor: "rgba(255,255,255,0.24)",
@@ -333,12 +401,30 @@ const styles = StyleSheet.create({
     marginTop: 18,
     paddingVertical: 16,
   },
+  lockedButton: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    backgroundColor: "rgba(94,86,79,0.12)",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 18,
+    paddingVertical: 16,
+  },
   playButtonPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.985 }],
   },
   playButtonText: {
     color: "#F4EEDB",
+    fontSize: 16,
+    fontWeight: "600",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  lockedButtonText: {
+    color: palette.textPrimary,
     fontSize: 16,
     fontWeight: "600",
     letterSpacing: 0.8,

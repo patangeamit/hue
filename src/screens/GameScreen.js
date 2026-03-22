@@ -62,11 +62,21 @@ export default function GameScreen({ navigation, route }) {
   const {
     addDiamonds,
     diamonds,
+    highestUnlockedLevelId,
     isMusicEnabled,
+    isLevelUnlocked,
+    markLevelCleared,
     toggleMusic,
   } = useCurrency()
-  const levelId = route.params?.levelId ?? levels[0].id
-  const level = useMemo(() => getLevelById(levelId), [levelId])
+  const requestedLevelId = route.params?.levelId ?? levels[0].id
+  const resolvedLevelId = useMemo(() => {
+    if (isLevelUnlocked(requestedLevelId)) {
+      return requestedLevelId
+    }
+
+    return highestUnlockedLevelId
+  }, [highestUnlockedLevelId, isLevelUnlocked, requestedLevelId])
+  const level = useMemo(() => getLevelById(resolvedLevelId), [resolvedLevelId])
   const solvedTiles = useMemo(
     () => createSolvedTiles(level.size, level.corners),
     [level]
@@ -91,6 +101,7 @@ export default function GameScreen({ navigation, route }) {
     if (started && isSolved(tiles) && !rewardGranted) {
       const timeoutId = setTimeout(() => {
         addDiamonds(level.reward)
+        markLevelCleared(level.id)
         setRewardGranted(true)
         setShowWinScreen(true)
       }, 4000)
@@ -99,7 +110,7 @@ export default function GameScreen({ navigation, route }) {
     }
 
     return undefined
-  }, [addDiamonds, level.reward, rewardGranted, started, tiles])
+  }, [addDiamonds, level.id, level.reward, markLevelCleared, rewardGranted, started, tiles])
 
   const handleTileSwap = (fromIndex, toIndex) => {
     if (!started) {
@@ -173,7 +184,14 @@ export default function GameScreen({ navigation, route }) {
     },
     {
       label: "Back To Levels",
-      onPress: () => navigation.navigate("LevelSelect"),
+      onPress: () => {
+        if (navigation.canGoBack()) {
+          navigation.goBack()
+          return
+        }
+
+        navigation.navigate("LevelSelect")
+      },
     },
   ]
 
@@ -190,7 +208,7 @@ export default function GameScreen({ navigation, route }) {
               { color: "#E59A9E", icon: "heart-outline", value: 31 },
               { color: "#64A8D8", icon: "diamond-outline", value: diamonds },
             ]}
-            title={`Scholar ${Number(levelId)}`}
+            title={`Scholar ${Number(resolvedLevelId)}`}
           />
         </View>
 
@@ -207,7 +225,14 @@ export default function GameScreen({ navigation, route }) {
           {!started ? (
             <View style={styles.startDock}>
               <Pressable
-                onPress={() => navigation.navigate("LevelSelect")}
+                onPress={() => {
+                  if (navigation.canGoBack()) {
+                    navigation.goBack()
+                    return
+                  }
+
+                  navigation.navigate("LevelSelect")
+                }}
                 style={({ pressed }) => [
                   styles.startButton,
                   pressed && styles.startButtonPressed,
@@ -245,6 +270,11 @@ export default function GameScreen({ navigation, route }) {
             <Pressable
               onPress={() => {
                 setShowWinScreen(false)
+                if (navigation.canGoBack()) {
+                  navigation.goBack()
+                  return
+                }
+
                 navigation.navigate("LevelSelect")
               }}
               style={({ pressed }) => [

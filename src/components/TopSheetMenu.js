@@ -91,6 +91,7 @@ export default function TopSheetMenu({
   socialActions = [],
   stats = [],
   title,
+  triggerMode = "icon",
 }) {
   const insets = useSafeAreaInsets()
   const [isOpen, setIsOpen] = React.useState(false)
@@ -167,16 +168,57 @@ export default function TopSheetMenu({
 
   return (
     <>
-      <Pressable
-        accessibilityLabel="Open menu"
-        onPress={toggleMenu}
-        style={({ pressed }) => [
-          styles.triggerButton,
-          pressed && styles.triggerButtonPressed,
-        ]}
-      >
-        <Ionicons color={palette.textPrimary} name="options-outline" size={22} />
-      </Pressable>
+      {triggerMode === "header" ? (
+        <View style={styles.topRow}>
+          <View style={styles.statsRow}>
+            {stats.map((stat) => (
+              <StatChip
+                key={`trigger-${stat.icon}-${stat.value}`}
+                color={stat.color}
+                icon={stat.icon}
+                value={stat.value}
+              />
+            ))}
+          </View>
+
+          <View style={styles.topActions}>
+            {onPlusPress ? (
+              <Pressable
+                accessibilityLabel="Primary action"
+                onPress={onPlusPress}
+                style={({ pressed }) => [
+                  styles.topCircleButton,
+                  pressed && styles.circleButtonPressed,
+                ]}
+              >
+                <Ionicons color={palette.textPrimary} name="add" size={24} />
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              accessibilityLabel="Open menu"
+              onPress={toggleMenu}
+              style={({ pressed }) => [
+                styles.topCircleButton,
+                pressed && styles.circleButtonPressed,
+              ]}
+            >
+              <Ionicons color={palette.textPrimary} name="options-outline" size={21} />
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <Pressable
+          accessibilityLabel="Open menu"
+          onPress={toggleMenu}
+          style={({ pressed }) => [
+            styles.triggerButton,
+            pressed && styles.triggerButtonPressed,
+          ]}
+        >
+          <Ionicons color={palette.textPrimary} name="options-outline" size={22} />
+        </Pressable>
+      )}
 
       <Modal
         animationType="none"
