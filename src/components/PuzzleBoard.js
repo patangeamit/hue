@@ -2,6 +2,7 @@ import React from "react"
 import {
   Animated,
   Easing,
+  PanResponder,
   Pressable,
   StyleSheet,
   View,
@@ -9,7 +10,7 @@ import {
 } from "react-native"
 import { palette } from "../theme/colors"
 
-const BOARD_PADDING = 14
+const BOARD_PADDING = 0
 const BOARD_GAP = 0
 
 function getFixedIndexSet(size) {
@@ -52,6 +53,17 @@ function blendColors(colorA, colorB, ratio) {
   })
 }
 
+function saturateColor(hex, amount = 1.22) {
+  const { r, g, b } = hexToRgb(hex)
+  const average = (r + g + b) / 3
+
+  return rgbToHex({
+    r: Math.max(0, Math.min(255, Math.round(average + (r - average) * amount))),
+    g: Math.max(0, Math.min(255, Math.round(average + (g - average) * amount))),
+    b: Math.max(0, Math.min(255, Math.round(average + (b - average) * amount))),
+  })
+}
+
 export function createSolvedTiles(size = 4, corners = palette.corners) {
   const { topLeft, topRight, bottomLeft, bottomRight } = corners
   const fixedIndexes = getFixedIndexSet(size)
@@ -64,12 +76,15 @@ export function createSolvedTiles(size = 4, corners = palette.corners) {
 
     for (let column = 0; column < size; column += 1) {
       const columnRatio = size === 1 ? 0 : column / (size - 1)
+      const correctIndex = row * size + column
+      const isFixed = fixedIndexes.has(correctIndex)
+      const baseColor = blendColors(leftBlend, rightBlend, columnRatio)
 
       tiles.push({
         id: `${row}-${column}`,
-        color: blendColors(leftBlend, rightBlend, columnRatio),
-        correctIndex: row * size + column,
-        isFixed: fixedIndexes.has(row * size + column),
+        color: isFixed ? baseColor : saturateColor(baseColor),
+        correctIndex,
+        isFixed,
       })
     }
   }
@@ -80,22 +95,33 @@ export function createSolvedTiles(size = 4, corners = palette.corners) {
 export default function PuzzleBoard({
   size = 4,
   tiles,
+  onTileSwap,
+  onTileTap,
   selectedTileId,
-  hintedTileId,
-  onTilePress,
   rectangular = true,
+  isWon = false,
 }) {
   const { width } = useWindowDimensions()
-  const boardSize = Math.min(width - 24, 380)
+  const boardSize = width
   const boardWidth = boardSize
-  const boardHeight = rectangular ? Math.round(boardSize * 1.18) : boardSize
+  const boardHeight = rectangular ? Math.round(boardSize * 1.34) : boardSize
   const contentWidth = boardWidth - BOARD_PADDING * 2
   const contentHeight = boardHeight - BOARD_PADDING * 2
   const tileWidth = (contentWidth - BOARD_GAP * (size - 1)) / size
   const tileHeight = (contentHeight - BOARD_GAP * (size - 1)) / size
   const animatedPositionsRef = React.useRef({})
   const hasMountedRef = React.useRef(false)
+  const boardRef = React.useRef(null)
   const [animatingTileIds, setAnimatingTileIds] = React.useState([])
+  const [draggingTileId, setDraggingTileId] = React.useState(null)
+  const dragOffsetRef = React.useRef(new Animated.ValueXY({ x: 0, y: 0 }))
+  const boardScaleRef = React.useRef(new Animated.Value(1))
+  const [boardFrame, setBoardFrame] = React.useState({
+    height: 0,
+    pageX: 0,
+    pageY: 0,
+    width: 0,
+  })
 
   const getTileCoordinates = React.useCallback(
     (index) => {
@@ -121,6 +147,10 @@ export default function PuzzleBoard({
   })
 
   React.useEffect(() => {
+    if (draggingTileId) {
+      return
+    }
+
     const movingTileIds = []
     const animations = tiles.map((tile, index) => {
       const position = animatedPositionsRef.current[tile.id]
@@ -165,16 +195,156 @@ export default function PuzzleBoard({
     }
 
     hasMountedRef.current = true
-  }, [getTileCoordinates, tiles])
+  }, [draggingTileId, getTileCoordinates, tiles])
+
+  const measureBoard = React.useCallback(() => {
+    if (!boardRef.current?.measureInWindow) {
+      return
+    }
+
+    boardRef.current.measureInWindow((pageX, pageY, measuredWidth, measuredHeight) => {
+      setBoardFrame({
+        height: measuredHeight,
+        pageX,
+        pageY,
+        width: measuredWidth,
+      })
+    })
+  }, [])
+
+  React.useEffect(() => {
+    measureBoard()
+  }, [measureBoard, width, size])
+
+  React.useEffect(() => {
+    if (isWon) {
+      // Win animation: shrink to 0.8 scale then bounce back to 1.0
+      Animated.sequence([
+        Animated.spring(boardScaleRef.current, {
+          toValue: 1.1,
+          friction: 9,
+          tension: 1,
+          useNativeDriver: true,
+        }), 
+        Animated.spring(boardScaleRef.current, {
+          toValue: 0.8,
+          friction: 9,
+          tension: 1,
+          useNativeDriver: true,
+        }), 
+        Animated.spring(boardScaleRef.current, {
+          toValue: 1.0,
+          friction: 9,
+          tension: 1,
+          useNativeDriver: true,
+        }),
+      ]).start()
+    }
+  }, [isWon])
+
+  const getSwapIndexFromPoint = React.useCallback(
+    (moveX, moveY) => {
+      const localX = moveX - boardFrame.pageX
+      const localY = moveY - boardFrame.pageY
+      const column = Math.max(
+        0,
+        Math.min(size - 1, Math.floor(localX / tileWidth))
+      )
+      const row = Math.max(
+        0,
+        Math.min(size - 1, Math.floor(localY / tileHeight))
+      )
+
+      return row * size + column
+    },
+    [boardFrame.pageX, boardFrame.pageY, size, tileHeight, tileWidth]
+  )
+
+  const resetDrag = React.useCallback(() => {
+    Animated.spring(dragOffsetRef.current, {
+      bounciness: 0,
+      speed: 22,
+      toValue: { x: 0, y: 0 },
+      useNativeDriver: true,
+    }).start()
+    setDraggingTileId(null)
+  }, [])
+
+  const finishDrag = React.useCallback(() => {
+    dragOffsetRef.current.stopAnimation(() => {
+      dragOffsetRef.current.setValue({ x: 0, y: 0 })
+      setDraggingTileId(null)
+    })
+  }, [])
+
+  const getPanHandlers = React.useCallback(
+    (tile, index) =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          !tile.isFixed &&
+          (Math.abs(gestureState.dx) > 4 || Math.abs(gestureState.dy) > 4),
+        onPanResponderGrant: () => {
+          if (tile.isFixed) {
+            return
+          }
+
+          dragOffsetRef.current.setValue({ x: 0, y: 0 })
+          setDraggingTileId(tile.id)
+        },
+        onPanResponderMove: (_, gestureState) => {
+          dragOffsetRef.current.setValue({
+            x: gestureState.dx,
+            y: gestureState.dy,
+          })
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          const toIndex = getSwapIndexFromPoint(
+            gestureState.moveX,
+            gestureState.moveY
+          )
+          const destinationTile = tiles[toIndex]
+
+          if (
+            toIndex === -1 ||
+            toIndex === index ||
+            !destinationTile ||
+            destinationTile.isFixed
+          ) {
+            resetDrag()
+            return
+          }
+
+          finishDrag()
+          onTileSwap(index, toIndex)
+        },
+        onPanResponderTerminate: resetDrag,
+      }).panHandlers,
+    [finishDrag, getSwapIndexFromPoint, onTileSwap, resetDrag, tiles]
+  )
 
   return (
     <View style={[styles.boardShell, { width: boardWidth, height: boardHeight }]}>
-      <View style={[styles.board, { width: contentWidth, height: contentHeight }]}>
+      <Animated.View
+        onLayout={measureBoard}
+        ref={boardRef}
+        style={[
+          styles.board,
+          { width: contentWidth, height: contentHeight },
+          { transform: [{ scale: boardScaleRef.current }] },
+        ]}
+      >
         {tiles.map((tile, index) => {
-          const isSelected = tile.id === selectedTileId
-          const isHinted = tile.id === hintedTileId
-          const isAnimating = animatingTileIds.includes(tile.id)
+          const isDragging = draggingTileId === tile.id
+          const isAnimating = animatingTileIds.includes(tile.id) || isDragging
+          const isSelected = selectedTileId === tile.id
           const position = animatedPositionsRef.current[tile.id]
+          const tileTransform = [{ translateX: position.x }, { translateY: position.y }]
+
+          if (isDragging) {
+            tileTransform.push({ translateX: dragOffsetRef.current.x })
+            tileTransform.push({ translateY: dragOffsetRef.current.y })
+            tileTransform.push({ scale: 1.02 })
+          }
 
           return (
             <Animated.View
@@ -183,19 +353,17 @@ export default function PuzzleBoard({
                 styles.tileLayer,
                 {
                   height: tileHeight,
-                  transform: [
-                    { translateX: position.x },
-                    { translateY: position.y },
-                  ],
+                  transform: tileTransform,
                   width: tileWidth,
                 },
                 isAnimating && styles.tileLayerActive,
               ]}
+              {...(!tile.isFixed ? getPanHandlers(tile, index) : {})}
             >
               <Pressable
                 disabled={tile.isFixed}
-                onPress={() => onTilePress(index)}
-                style={({ pressed }) => [
+                onPress={() => onTileTap?.(index)}
+                style={[
                   styles.tile,
                   {
                     backgroundColor: tile.color,
@@ -203,9 +371,8 @@ export default function PuzzleBoard({
                     width: tileWidth,
                   },
                   tile.isFixed && styles.tileFixed,
+                  isDragging && styles.tileDragging,
                   isSelected && styles.tileSelected,
-                  isHinted && styles.tileHinted,
-                  pressed && !tile.isFixed && styles.tilePressed,
                 ]}
               >
                 {tile.isFixed ? <View style={styles.fixedMarker} /> : null}
@@ -213,7 +380,7 @@ export default function PuzzleBoard({
             </Animated.View>
           )
         })}
-      </View>
+      </Animated.View>
     </View>
   )
 }
@@ -221,15 +388,8 @@ export default function PuzzleBoard({
 const styles = StyleSheet.create({
   boardShell: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.26)",
-    borderRadius: 34,
     justifyContent: "center",
     padding: BOARD_PADDING,
-    shadowColor: palette.shadow,
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.16,
-    shadowRadius: 24,
-    elevation: 6,
   },
   board: {
     justifyContent: "center",
@@ -248,27 +408,20 @@ const styles = StyleSheet.create({
   tile: {
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#8A8A8A",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 2,
   },
   tileFixed: {
-    shadowOpacity: 0.04,
-    elevation: 0,
+    opacity: 1,
   },
-  tileHinted: {
-    borderColor: "rgba(255,255,255,0.9)",
-    borderWidth: 2,
-  },
-  tilePressed: {
-    transform: [{ scale: 0.96 }],
+  tileDragging: {
+    shadowColor: "#7B7367",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.26,
+    shadowRadius: 18,
+    elevation: 18,
   },
   tileSelected: {
-    borderColor: "rgba(94,86,79,0.42)",
+    borderColor: "rgba(244,238,219,0.8)",
     borderWidth: 2,
-    transform: [{ scale: 0.97 }],
   },
   fixedMarker: {
     backgroundColor: "rgba(255,255,255,0.82)",

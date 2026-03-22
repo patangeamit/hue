@@ -22,6 +22,7 @@ const styles = StyleSheet.create({
   level: {
     color: palette.textMuted,
     fontSize: 12,
+    fontWeight: "600",
     letterSpacing: 1.2,
     textTransform: "uppercase",
   },

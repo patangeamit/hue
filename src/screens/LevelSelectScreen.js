@@ -1,33 +1,143 @@
 import React from "react"
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import {
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
-import LevelCard from "../components/LevelCard"
+import PuzzlePreviewGrid from "../components/PuzzlePreviewGrid"
+import TopSheetMenu from "../components/TopSheetMenu"
 import { levels } from "../data/levels"
 import { useCurrency } from "../state/CurrencyContext"
 import { palette } from "../theme/colors"
 
-function LevelPreview({ level, onPress }) {
+function PuzzlePreview({ level, width }) {
+  const previewWidth = Math.min(width - 126, 250)
+
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.levelButton, pressed && styles.levelButtonPressed]}
-    >
-      <View style={styles.levelTopRow}>
-        <LevelCard level={level.id} subtitle={level.name} />
-        <Ionicons color={palette.textMuted} name="chevron-forward" size={18} />
+    <View style={styles.previewFrame}>
+      <PuzzlePreviewGrid
+        corners={level.corners}
+        dimension={previewWidth}
+        gap={0}
+        rectangular
+        size={level.size}
+        tileRadius={0}
+      />
+    </View>
+  )
+}
+
+function LevelSlide({ level, navigation, width }) {
+  return (
+    <View style={[styles.slide, { width }]}>
+      <View style={styles.slideInner}>
+        <View style={styles.card}>
+          <View style={styles.cardGlowLarge} />
+          <View style={styles.cardGlowSmall} />
+
+          <Text style={styles.cardLabel}>Level {Number(level.id)}</Text>
+          <Text style={styles.cardTitle}>{level.name}</Text>
+
+          <View style={styles.previewWrap}>
+            <PuzzlePreview level={level} width={width} />
+          </View>
+
+          <View style={styles.metaRow}>
+            <View style={styles.metaPill}>
+              <Text style={styles.metaPillText}>{level.size} x {level.size}</Text>
+            </View>
+            <View style={styles.metaPill}>
+              <Ionicons color="#64A8D8" name="diamond-outline" size={14} />
+              <Text style={styles.metaPillText}>{level.reward}</Text>
+            </View>
+          </View>
+
+          <Pressable
+            onPress={() => navigation.navigate("Game", { levelId: level.id })}
+            style={({ pressed }) => [
+              styles.playButton,
+              pressed && styles.playButtonPressed,
+            ]}
+          >
+            <Text style={styles.playButtonText}>Play</Text>
+            <Ionicons color="#F4EEDB" name="arrow-forward" size={18} />
+          </Pressable>
+        </View>
       </View>
-      <Text style={styles.levelSubtitle}>{level.subtitle}</Text>
-      <View style={styles.metaRow}>
-        <Text style={styles.metaText}>{level.size} x {level.size}</Text>
-        <Text style={styles.metaText}>{level.reward} diamonds</Text>
-      </View>
-    </Pressable>
+    </View>
   )
 }
 
 export default function LevelSelectScreen({ navigation }) {
-  const { diamonds } = useCurrency()
+  const { diamonds, isMusicEnabled, toggleMusic } = useCurrency()
+  const { width } = useWindowDimensions()
+  const [notificationsEnabled, setNotificationsEnabled] = React.useState(true)
+  const [showScores, setShowScores] = React.useState(true)
+
+  const handleRandomLevel = React.useCallback(() => {
+    const randomLevel = levels[Math.floor(Math.random() * levels.length)]
+    console.log(levels)
+    navigation.navigate("Game", { levelId: randomLevel.id })
+  }, [navigation])
+
+  const menuSettings = [
+    {
+      label: "Sound",
+      onPress: toggleMusic,
+      value: isMusicEnabled,
+    },
+    {
+      label: "Notifications",
+      onPress: () => setNotificationsEnabled((currentValue) => !currentValue),
+      value: notificationsEnabled,
+    },
+    {
+      label: "Show Scores",
+      onPress: () => setShowScores((currentValue) => !currentValue),
+      value: showScores,
+    },
+  ]
+
+  const menuPrimaryActions = [
+    {
+      label: "Random Level",
+      onPress: handleRandomLevel,
+    },
+    {
+      label: "Back Home",
+      onPress: () => navigation.navigate("Home"),
+    },
+  ]
+
+  const menuLinks = [
+    {
+      label: "Home",
+      onPress: () => navigation.navigate("Home"),
+    },
+    {
+      label: "Credits",
+      onPress: () => navigation.navigate("Credits"),
+    },
+    {
+      label: "Privacy Policy",
+      onPress: () => navigation.navigate("PrivacyPolicy"),
+    },
+    {
+      label: "Rate App",
+      onPress: () => navigation.navigate("RateApp"),
+    },
+  ]
+
+  const menuSocialActions = [
+    { icon: "logo-facebook", onPress: () => {} },
+    { icon: "logo-twitter", onPress: () => {} },
+    { icon: "logo-instagram", onPress: () => {} },
+  ]
 
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
@@ -35,31 +145,41 @@ export default function LevelSelectScreen({ navigation }) {
       <View style={styles.backgroundGlowSmall} />
 
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.eyebrow}>Color Study</Text>
-          <Text style={styles.title}>Choose a level</Text>
-          <View style={styles.diamondBadge}>
-            <Ionicons color="#64A8D8" name="diamond-outline" size={16} />
-            <Text style={styles.diamondText}>{diamonds}</Text>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.headerTitle}>Levels</Text>
+            <Text style={styles.headerSubtitle}>Choose a palette.</Text>
           </View>
-          <Text style={styles.description}>
-            Quiet gradients, fixed anchors, and a little room to breathe.
-          </Text>
+
+          <TopSheetMenu
+            links={menuLinks}
+            onPlusPress={handleRandomLevel}
+            primaryActions={menuPrimaryActions}
+            secondaryAction={{ label: "Close" }}
+            settings={menuSettings}
+            socialActions={menuSocialActions}
+            stats={[
+              { color: "#E59A9E", icon: "heart-outline", value: 31 },
+              { color: "#64A8D8", icon: "diamond-outline", value: diamonds },
+            ]}
+            title="Menu"
+          />
         </View>
 
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          style={styles.scrollView}
-        >
-          {levels.map((level) => (
-            <LevelPreview
-              key={level.id}
-              level={level}
-              onPress={() => navigation.navigate("Game", { levelId: level.id })}
-            />
-          ))}
-        </ScrollView>
+        <FlatList
+          data={levels}
+          decelerationRate="fast"
+          horizontal
+          keyExtractor={(level) => level.id}
+          pagingEnabled
+          renderItem={({ item }) => (
+            <LevelSlide level={item} navigation={navigation} width={width} />
+          )}
+          showsHorizontalScrollIndicator={false}
+          snapToAlignment="start"
+          snapToInterval={width}
+          style={styles.carousel}
+        />
       </View>
     </SafeAreaView>
   )
@@ -72,8 +192,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingBottom: 16,
+    paddingBottom: 20,
   },
   backgroundGlowLarge: {
     backgroundColor: "rgba(255,255,255,0.26)",
@@ -81,99 +200,148 @@ const styles = StyleSheet.create({
     height: 260,
     position: "absolute",
     right: -40,
-    top: 80,
+    top: 120,
     width: 260,
   },
   backgroundGlowSmall: {
     backgroundColor: "rgba(255,255,255,0.18)",
     borderRadius: 120,
-    bottom: 120,
+    bottom: 100,
     height: 180,
     left: -20,
     position: "absolute",
     width: 180,
   },
-  header: {
-    alignItems: "center",
-    paddingTop: 12,
-  },
-  eyebrow: {
-    color: palette.textMuted,
-    fontSize: 12,
-    letterSpacing: 2.2,
-    textTransform: "uppercase",
-  },
-  title: {
-    color: palette.textPrimary,
-    fontSize: 30,
-    fontWeight: "400",
-    marginTop: 10,
-  },
-  diamondBadge: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.3)",
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 6,
-    marginTop: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  diamondText: {
-    color: palette.textPrimary,
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-  },
-  description: {
-    color: palette.textMuted,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 10,
-    maxWidth: 260,
-    textAlign: "center",
-  },
-  scrollView: {
-    flex: 1,
-    marginTop: 28,
-  },
-  scrollContent: {
-    gap: 14,
-    paddingBottom: 24,
-  },
-  levelButton: {
-    backgroundColor: "rgba(255,255,255,0.28)",
-    borderRadius: 28,
-    padding: 18,
-    shadowColor: palette.shadow,
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    elevation: 3,
-  },
-  levelButtonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.985 }],
-  },
-  levelTopRow: {
+  headerRow: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
+    paddingHorizontal: 24,
+    paddingTop: 10,
   },
-  levelSubtitle: {
+  headerTitle: {
+    color: palette.textPrimary,
+    fontSize: 34,
+    fontWeight: "500",
+    letterSpacing: 0.6,
+  },
+  headerSubtitle: {
     color: palette.textMuted,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 12,
+    fontSize: 14,
+    fontWeight: "500",
+    marginTop: 6,
+  },
+  carousel: {
+    flex: 1,
+    marginTop: 18,
+  },
+  slide: {
+    flex: 1,
+  },
+  slideInner: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingVertical: 6,
+  },
+  card: {
+    alignItems: "center",
+    backgroundColor: "rgba(239,232,216,0.92)",
+    borderRadius: 38,
+    flex: 1,
+    overflow: "hidden",
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
+    shadowColor: palette.shadow,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 5,
+  },
+  cardGlowLarge: {
+    backgroundColor: "rgba(255,255,255,0.24)",
+    borderRadius: 120,
+    height: 160,
+    position: "absolute",
+    right: -12,
+    top: 80,
+    width: 160,
+  },
+  cardGlowSmall: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 90,
+    bottom: 40,
+    height: 120,
+    left: -20,
+    position: "absolute",
+    width: 120,
+  },
+  cardLabel: {
+    color: palette.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 2.1,
+    textTransform: "uppercase",
+  },
+  cardTitle: {
+    color: palette.textPrimary,
+    fontSize: 30,
+    fontWeight: "500",
+    marginTop: 8,
+  },
+  previewWrap: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    width: "100%",
+  },
+  previewFrame: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 310,
+    width: "100%",
   },
   metaRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 14,
+    gap: 10,
+    marginTop: 8,
   },
-  metaText: {
-    color: palette.textMuted,
+  metaPill: {
+    alignItems: "center",
+    backgroundColor: "rgba(94,86,79,0.08)",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  metaPillText: {
+    color: palette.textPrimary,
     fontSize: 12,
-    letterSpacing: 0.4,
+    fontWeight: "600",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  playButton: {
+    alignItems: "center",
+    alignSelf: "stretch",
+    backgroundColor: "#2D2430",
+    borderRadius: 999,
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 18,
+    paddingVertical: 16,
+  },
+  playButtonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.985 }],
+  },
+  playButtonText: {
+    color: "#F4EEDB",
+    fontSize: 16,
+    fontWeight: "600",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
   },
 })

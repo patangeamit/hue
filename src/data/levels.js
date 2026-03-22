@@ -83,6 +83,20 @@ export const levels = [
       bottomRight: "#E98B9D",
     },
   },
+  {
+    id: "07",
+    name: "Sunlit Hush",
+    subtitle: "Warm cream fading into lilac dusk.",
+    reward: 20,
+    size: 6,
+    swapCount: 18,
+    corners: {
+      topLeft: "#ffffff",
+      topRight: "#ffa200",
+      bottomLeft: "#8800ff",
+      bottomRight: "#00c3ff",
+    },
+  },
 ]
 
 export function getLevelById(levelId) {
