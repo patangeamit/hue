@@ -1,5 +1,6 @@
 import React from "react"
 import {
+  Animated,
   FlatList,
   Pressable,
   StyleSheet,
@@ -9,11 +10,45 @@ import {
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
+import { useFocusEffect } from "@react-navigation/native"
 import PuzzlePreviewGrid from "../components/PuzzlePreviewGrid"
 import TopSheetMenu from "../components/TopSheetMenu"
 import { levels } from "../data/levels"
 import { useCurrency } from "../state/CurrencyContext"
 import { palette } from "../theme/colors"
+
+const PAGINATION_SLOT_COUNT = 5
+
+function formatRechargeTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+}
+
+function getIndicatorSlot(index, totalCount) {
+  if (totalCount <= PAGINATION_SLOT_COUNT) {
+    return index
+  }
+
+  if (index <= 0) {
+    return 0
+  }
+
+  if (index === 1) {
+    return 1
+  }
+
+  if (index >= totalCount - 1) {
+    return 4
+  }
+
+  if (index === totalCount - 2) {
+    return 3
+  }
+
+  return 2
+}
 
 const PuzzlePreview = React.memo(function PuzzlePreview({ level, width }) {
   const previewWidth = Math.min(width - 126, 250)
@@ -21,8 +56,9 @@ const PuzzlePreview = React.memo(function PuzzlePreview({ level, width }) {
   return (
     <View style={styles.previewFrame}>
       <PuzzlePreviewGrid
-        corners={level.corners}
         dimension={previewWidth}
+        fixedTileCount={level.fixedTileCount}
+        gradient={level.gradient}
         gap={0}
         rectangular
         size={level.size}
@@ -42,7 +78,7 @@ const LevelSlide = React.memo(function LevelSlide({
   return (
     <View style={[styles.slide, { width }]}>
       <View style={styles.slideInner}>
-        <View style={[styles.card, isLocked && styles.cardLocked]}>
+        <View style={styles.card}>
           <View style={styles.cardGlowLarge} />
           <View style={styles.cardGlowSmall} />
 
@@ -94,15 +130,64 @@ const LevelSlide = React.memo(function LevelSlide({
 export default function LevelSelectScreen({ navigation }) {
   const {
     diamonds,
+    energy,
     highestUnlockedLevelId,
     isLevelCleared,
     isLevelUnlocked,
     isMusicEnabled,
+    maxEnergy,
+    rechargeSecondsRemaining,
     toggleMusic,
   } = useCurrency()
   const { width } = useWindowDimensions()
+  const listRef = React.useRef(null)
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true)
   const [showScores, setShowScores] = React.useState(true)
+  const highestUnlockedLevelIndex = React.useMemo(
+    () =>
+      Math.max(
+        0,
+        levels.findIndex((level) => level.id === highestUnlockedLevelId)
+      ),
+    [highestUnlockedLevelId]
+  )
+  const [currentLevelIndex, setCurrentLevelIndex] = React.useState(
+    highestUnlockedLevelIndex
+  )
+  const paginationSlot = React.useRef(
+    new Animated.Value(getIndicatorSlot(highestUnlockedLevelIndex, levels.length))
+  ).current
+  const paginationPulse = React.useRef(new Animated.Value(0)).current
+
+  React.useEffect(() => {
+    setCurrentLevelIndex(highestUnlockedLevelIndex)
+  }, [highestUnlockedLevelIndex])
+
+  React.useEffect(() => {
+    const nextSlot = getIndicatorSlot(currentLevelIndex, levels.length)
+
+    Animated.parallel([
+      Animated.spring(paginationSlot, {
+        damping: 18,
+        mass: 0.9,
+        stiffness: 180,
+        toValue: nextSlot,
+        useNativeDriver: false,
+      }),
+      Animated.sequence([
+        Animated.timing(paginationPulse, {
+          duration: 120,
+          toValue: 1,
+          useNativeDriver: false,
+        }),
+        Animated.timing(paginationPulse, {
+          duration: 180,
+          toValue: 0,
+          useNativeDriver: false,
+        }),
+      ]),
+    ]).start()
+  }, [currentLevelIndex, paginationPulse, paginationSlot])
 
   const handleRandomLevel = React.useCallback(() => {
     const unlockedLevels = levels.filter((level) => isLevelUnlocked(level.id))
@@ -127,26 +212,12 @@ export default function LevelSelectScreen({ navigation }) {
       onPress: toggleMusic,
       value: isMusicEnabled,
     },
-    {
-      label: "Notifications",
-      onPress: () => setNotificationsEnabled((currentValue) => !currentValue),
-      value: notificationsEnabled,
-    },
-    {
-      label: "Show Scores",
-      onPress: () => setShowScores((currentValue) => !currentValue),
-      value: showScores,
-    },
   ]
 
   const menuPrimaryActions = [
     {
       label: "Random Level",
       onPress: handleRandomLevel,
-    },
-    {
-      label: "Back Home",
-      onPress: handleBackHome,
     },
   ]
 
@@ -170,9 +241,8 @@ export default function LevelSelectScreen({ navigation }) {
   ]
 
   const menuSocialActions = [
-    { icon: "logo-facebook", onPress: () => {} },
-    { icon: "logo-twitter", onPress: () => {} },
-    { icon: "logo-instagram", onPress: () => {} },
+    { icon: "logo-google-playstore", onPress: () => {} },
+    {icon: "share-social-sharp", onPress: () => {} },
   ]
 
   const renderLevelSlide = React.useCallback(
@@ -197,6 +267,29 @@ export default function LevelSelectScreen({ navigation }) {
     [width]
   )
 
+  const handleMomentumScrollEnd = React.useCallback(
+    (event) => {
+      const offsetX = event.nativeEvent.contentOffset.x
+      const nextIndex = Math.round(offsetX / width)
+
+      setCurrentLevelIndex(Math.max(0, Math.min(levels.length - 1, nextIndex)))
+    },
+    [width]
+  )
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const timeoutId = setTimeout(() => {
+        listRef.current?.scrollToIndex({
+          animated: false,
+          index: highestUnlockedLevelIndex,
+        })
+      }, 0)
+
+      return () => clearTimeout(timeoutId)
+    }, [highestUnlockedLevelIndex])
+  )
+
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
       <View style={styles.backgroundGlowLarge} />
@@ -206,13 +299,17 @@ export default function LevelSelectScreen({ navigation }) {
         <View style={styles.menuHeaderWrap}>
           <TopSheetMenu
             links={menuLinks}
-            onPlusPress={handleRandomLevel}
+            // onPlusPress={handleRandomLevel}
             primaryActions={menuPrimaryActions}
-            secondaryAction={{ label: "Close" }}
+            // secondaryAction={{ label: "Close" }}
             settings={menuSettings}
             socialActions={menuSocialActions}
             stats={[
-              { color: "#E59A9E", icon: "checkmark-circle-outline", value: highestUnlockedLevelId },
+              {
+                color: "#E59A9E",
+                icon: "flash-outline",
+                value: `${energy}/${maxEnergy}`,
+              },
               { color: "#64A8D8", icon: "diamond-outline", value: diamonds },
             ]}
             title="Menu"
@@ -222,7 +319,11 @@ export default function LevelSelectScreen({ navigation }) {
         <View style={styles.headerBlock}>
           <View style={styles.titleWrap}>
             <Text style={styles.headerTitle}>Levels</Text>
-            <Text style={styles.headerSubtitle}>Choose a palette.</Text>
+            <Text style={styles.headerSubtitle}>
+              {energy > 0
+                ? `Choose a palette. Energy ${energy}/${maxEnergy}.`
+                : `Energy recharges in ${formatRechargeTime(rechargeSecondsRemaining)}.`}
+            </Text>
           </View>
         </View>
 
@@ -231,10 +332,13 @@ export default function LevelSelectScreen({ navigation }) {
           decelerationRate="fast"
           getItemLayout={getItemLayout}
           horizontal
+          initialScrollIndex={highestUnlockedLevelIndex}
           initialNumToRender={1}
           keyExtractor={(level) => level.id}
           maxToRenderPerBatch={2}
+          onMomentumScrollEnd={handleMomentumScrollEnd}
           pagingEnabled
+          ref={listRef}
           removeClippedSubviews
           renderItem={renderLevelSlide}
           showsHorizontalScrollIndicator={false}
@@ -243,6 +347,40 @@ export default function LevelSelectScreen({ navigation }) {
           style={styles.carousel}
           windowSize={3}
         />
+
+        <View pointerEvents="none" style={styles.paginationWrap}>
+          {Array.from({ length: Math.min(PAGINATION_SLOT_COUNT, levels.length) }, (_, slotIndex) => {
+            const width = paginationSlot.interpolate({
+              inputRange: [slotIndex - 1, slotIndex, slotIndex + 1],
+              outputRange: [6, 18, 6],
+              extrapolate: "clamp",
+            })
+            const opacity = paginationSlot.interpolate({
+              inputRange: [slotIndex - 1, slotIndex, slotIndex + 1],
+              outputRange: [0.38, 0.9, 0.38],
+              extrapolate: "clamp",
+            })
+            const pulseScale = paginationPulse.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 1.08],
+            })
+            const baseScale = slotIndex === 0 || slotIndex === PAGINATION_SLOT_COUNT - 1 ? 0.9 : 1
+
+            return (
+              <Animated.View
+                key={`pagination-dot-${slotIndex}`}
+                style={[
+                  styles.paginationDot,
+                  {
+                    opacity,
+                    transform: [{ scale: pulseScale }, { scale: baseScale }],
+                    width,
+                  },
+                ]}
+              />
+            )
+          })}
+        </View>
       </View>
     </SafeAreaView>
   )
@@ -300,6 +438,20 @@ const styles = StyleSheet.create({
     flex: 1,
     marginTop: 18,
   },
+  paginationWrap: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "center",
+    marginTop: 8,
+    minHeight: 24,
+  },
+  paginationDot: {
+    backgroundColor: "#2D2430",
+    borderRadius: 999,
+    height: 6,
+    width: 6,
+  },
   slide: {
     flex: 1,
   },
@@ -322,9 +474,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 24,
     elevation: 5,
-  },
-  cardLocked: {
-    opacity: 0.72,
   },
   cardGlowLarge: {
     backgroundColor: "rgba(255,255,255,0.24)",

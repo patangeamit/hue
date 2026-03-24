@@ -14,17 +14,22 @@ import { levels } from "../data/levels"
 import { useCurrency } from "../state/CurrencyContext"
 import { palette } from "../theme/colors"
 
+function formatRechargeTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+}
+
 function TileGraphic() {
   const { width } = useWindowDimensions()
-  const previewWidth = Math.min(width - 120, 280)
+  // const previewWidth = Math.min(width);
 
   return (
     <View style={styles.previewShell}>
-      <View style={styles.previewHaloLarge} />
-      <View style={styles.previewHaloSmall} />
       <PuzzlePreviewGrid
-        corners={levels[0].corners}
-        dimension={previewWidth}
+        dimension={width}
+        gradient={levels[0].gradient}
         gap={0}
         rectangular
         size={5}
@@ -35,7 +40,15 @@ function TileGraphic() {
 }
 
 export default function HomeScreen({ navigation }) {
-  const { diamonds, isMusicEnabled, resetGame, toggleMusic } = useCurrency()
+  const {
+    diamonds,
+    energy,
+    isMusicEnabled,
+    maxEnergy,
+    rechargeSecondsRemaining,
+    resetGame,
+    toggleMusic,
+  } = useCurrency()
   const [notificationsEnabled, setNotificationsEnabled] = React.useState(true)
   const [showScores, setShowScores] = React.useState(true)
 
@@ -45,27 +58,27 @@ export default function HomeScreen({ navigation }) {
       onPress: toggleMusic,
       value: isMusicEnabled,
     },
-    {
-      label: "Notifications",
-      onPress: () => setNotificationsEnabled((currentValue) => !currentValue),
-      value: notificationsEnabled,
-    },
-    {
-      label: "Show Scores",
-      onPress: () => setShowScores((currentValue) => !currentValue),
-      value: showScores,
-    },
+    // {
+    //   label: "Notifications",
+    //   onPress: () => setNotificationsEnabled((currentValue) => !currentValue),
+    //   value: notificationsEnabled,
+    // },
+    // {
+    //   label: "Show Scores",
+    //   onPress: () => setShowScores((currentValue) => !currentValue),
+    //   value: showScores,
+    // },
   ]
 
   const menuPrimaryActions = [
-    {
-      label: "Remove Ads",
-      onPress: () => navigation.navigate("RateApp"),
-    },
-    {
-      label: "Achievements",
-      onPress: () => navigation.navigate("Credits"),
-    },
+    // {
+    //   label: "Remove Ads",
+    //   onPress: () => navigation.navigate("RateApp"),
+    // },
+    // {
+    //   label: "Achievements",
+    //   onPress: () => navigation.navigate("Credits"),
+    // },
   ]
 
   const menuLinks = [
@@ -88,9 +101,10 @@ export default function HomeScreen({ navigation }) {
   ]
 
   const menuSocialActions = [
-    { icon: "logo-facebook", onPress: () => {} },
-    { icon: "logo-twitter", onPress: () => {} },
-    { icon: "logo-instagram", onPress: () => {} },
+    // { icon: "logo-facebook", onPress: () => {} },
+    // { icon: "logo-twitter", onPress: () => {} },
+    { icon: "logo-google-playstore", onPress: () => {} },
+    {icon: "share-social-sharp", onPress: () => {} },
   ]
 
   return (
@@ -102,28 +116,25 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.headerRow}>
           <View style={styles.titleWrap}>
             <Text style={styles.title}>Hue</Text>
+            {/* <Text style={styles.heroSubtitle}>A color puzzle adventure</Text> */}
           </View>
 
           <TopSheetMenu
             links={menuLinks}
             onPlusPress={() => navigation.push("LevelSelect")}
             primaryActions={menuPrimaryActions}
-            secondaryAction={{ label: "Close" }}
+            // secondaryAction={{ label: "Close" }}
             settings={menuSettings}
             socialActions={menuSocialActions}
             stats={[
-              { color: "#E59A9E", icon: "heart-outline", value: 31 },
+              { color: "#E59A9E", icon: "flash-outline", value: `${energy}/${maxEnergy}` },
               { color: "#64A8D8", icon: "diamond-outline", value: diamonds },
             ]}
             title="Menu"
           />
         </View>
-
-        <View style={styles.heroCard}>
-          <Text style={styles.heroTitle}>Hue</Text>
-          <Text style={styles.heroSubtitle}>Rebuild the gradient.</Text>
-          <TileGraphic />
-        </View>
+        
+        <TileGraphic />
 
         <Pressable
           onPress={() => navigation.push("LevelSelect")}
@@ -135,6 +146,11 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.playButtonLabel}>Play</Text>
           <Ionicons color="#F4EEDB" name="arrow-forward" size={22} />
         </Pressable>
+        {energy < maxEnergy ? (
+          <Text style={styles.energyHint}>
+            Next energy in {formatRechargeTime(rechargeSecondsRemaining)}
+          </Text>
+        ) : null}
       </View>
     </SafeAreaView>
   )
@@ -184,19 +200,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     letterSpacing: 0.8,
   },
-  heroCard: {
-    alignItems: "center",
-    backgroundColor: "rgba(239,232,216,0.9)",
-    borderRadius: 38,
-    marginHorizontal: 2,
-    paddingHorizontal: 20,
-    paddingVertical: 28,
-    shadowColor: palette.shadow,
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.12,
-    shadowRadius: 22,
-    elevation: 5,
-  },
   heroTitle: {
     color: palette.textPrimary,
     fontSize: 34,
@@ -214,9 +217,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 28,
-    minHeight: 300,
+    marginHorizontal: -24,
     overflow: "hidden",
-    width: "100%",
   },
   previewHaloLarge: {
     backgroundColor: "rgba(255,255,255,0.34)",
@@ -254,6 +256,13 @@ const styles = StyleSheet.create({
   playButtonPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.985 }],
+  },
+  energyHint: {
+    color: palette.textMuted,
+    fontSize: 13,
+    fontWeight: "500",
+    marginTop: -12,
+    textAlign: "center",
   },
   playButtonLabel: {
     color: "#F4EEDB",

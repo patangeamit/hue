@@ -12,6 +12,15 @@ import TopSheetMenu from "../components/TopSheetMenu"
 import { getLevelById, levels } from "../data/levels"
 import { useCurrency } from "../state/CurrencyContext"
 
+function formatRechargeTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+}
+
+const ENERGY_PURCHASE_COST = 25
+
 function randomIndex(max) {
   return Math.floor(Math.random() * max)
 }
@@ -61,11 +70,16 @@ function isSolved(tiles) {
 export default function GameScreen({ navigation, route }) {
   const {
     addDiamonds,
+    buyEnergy,
+    consumeEnergy,
     diamonds,
+    energy,
     highestUnlockedLevelId,
     isMusicEnabled,
     isLevelUnlocked,
+    maxEnergy,
     markLevelCleared,
+    rechargeSecondsRemaining,
     toggleMusic,
   } = useCurrency()
   const requestedLevelId = route.params?.levelId ?? levels[0].id
@@ -78,12 +92,13 @@ export default function GameScreen({ navigation, route }) {
   }, [highestUnlockedLevelId, isLevelUnlocked, requestedLevelId])
   const level = useMemo(() => getLevelById(resolvedLevelId), [resolvedLevelId])
   const solvedTiles = useMemo(
-    () => createSolvedTiles(level.size, level.corners),
+    () => createSolvedTiles(level.size, level.gradient, level.fixedTileCount),
     [level]
   )
   const [initialTiles, setInitialTiles] = useState(() => solvedTiles)
   const [tiles, setTiles] = useState(solvedTiles)
   const [started, setStarted] = useState(false)
+  const [showEnergyDialog, setShowEnergyDialog] = useState(false)
   const [showWinScreen, setShowWinScreen] = useState(false)
   const [rewardGranted, setRewardGranted] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(null)
@@ -92,6 +107,7 @@ export default function GameScreen({ navigation, route }) {
     setInitialTiles(solvedTiles)
     setTiles(solvedTiles)
     setStarted(false)
+    setShowEnergyDialog(false)
     setShowWinScreen(false)
     setRewardGranted(false)
     setSelectedIndex(null)
@@ -126,6 +142,16 @@ export default function GameScreen({ navigation, route }) {
   }
 
   const handleStart = () => {
+    if (energy <= 0) {
+      setShowEnergyDialog(true)
+      return
+    }
+
+    if (!consumeEnergy()) {
+      setShowEnergyDialog(true)
+      return
+    }
+
     const nextPuzzle = createPuzzleTiles(solvedTiles, level.swapCount)
     setInitialTiles(nextPuzzle)
     setTiles(nextPuzzle)
@@ -169,6 +195,12 @@ export default function GameScreen({ navigation, route }) {
     setSelectedIndex(null)
   }
 
+  const handleBuyEnergy = () => {
+    if (buyEnergy()) {
+      setShowEnergyDialog(false)
+    }
+  }
+
   const menuSettings = [
     {
       label: "Sound",
@@ -205,7 +237,7 @@ export default function GameScreen({ navigation, route }) {
             secondaryAction={{ label: "Close" }}
             settings={menuSettings}
             stats={[
-              { color: "#E59A9E", icon: "heart-outline", value: 31 },
+              { color: "#E59A9E", icon: "flash-outline", value: `${energy}/${maxEnergy}` },
               { color: "#64A8D8", icon: "diamond-outline", value: diamonds },
             ]}
             title={`Scholar ${Number(resolvedLevelId)}`}
@@ -225,29 +257,15 @@ export default function GameScreen({ navigation, route }) {
           {!started ? (
             <View style={styles.startDock}>
               <Pressable
-                onPress={() => {
-                  if (navigation.canGoBack()) {
-                    navigation.goBack()
-                    return
-                  }
-
-                  navigation.navigate("LevelSelect")
-                }}
-                style={({ pressed }) => [
-                  styles.startButton,
-                  pressed && styles.startButtonPressed,
-                ]}
-              >
-                <Text style={styles.startButtonLabel}>Levels</Text>
-              </Pressable>
-              <Pressable
                 onPress={handleStart}
                 style={({ pressed }) => [
                   styles.startButton,
                   pressed && styles.startButtonPressed,
                 ]}
               >
-                <Text style={styles.startButtonLabel}>Start</Text>
+                <Text style={styles.startButtonLabel}>
+                  {energy > 0 ? "Start" : `Recharge ${formatRechargeTime(rechargeSecondsRemaining)}`}
+                </Text>
               </Pressable>
             </View>
           ) : null}
@@ -282,7 +300,7 @@ export default function GameScreen({ navigation, route }) {
                 pressed && styles.winButtonPressed,
               ]}
             >
-              <Text style={styles.winPrimaryLabel}>Back To Levels</Text>
+              <Text style={styles.winPrimaryLabel}>Next Level</Text>
             </Pressable>
             <Pressable
               onPress={() => {
@@ -295,6 +313,45 @@ export default function GameScreen({ navigation, route }) {
               ]}
             >
               <Text style={styles.winSecondaryLabel}>Shuffle Again</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setShowEnergyDialog(false)}
+        transparent
+        visible={showEnergyDialog}
+      >
+        <View style={styles.winOverlay}>
+          <View style={styles.winCard}>
+            <Text style={styles.winEyebrow}>Out Of Energy</Text>
+            <Text style={styles.winTitle}>Recharge Needed</Text>
+            <Text style={styles.winText}>
+              You are out of energy. Next recharge in {formatRechargeTime(rechargeSecondsRemaining)}.
+            </Text>
+            <Pressable
+              disabled={diamonds < ENERGY_PURCHASE_COST}
+              onPress={handleBuyEnergy}
+              style={({ pressed }) => [
+                styles.winPrimaryButton,
+                diamonds < ENERGY_PURCHASE_COST && styles.winButtonDisabled,
+                pressed && styles.winButtonPressed,
+              ]}
+            >
+              <Text style={styles.winPrimaryLabel}>
+                Buy 1 Energy • {ENERGY_PURCHASE_COST} Diamonds
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setShowEnergyDialog(false)}
+              style={({ pressed }) => [
+                styles.winSecondaryButton,
+                pressed && styles.winButtonPressed,
+              ]}
+            >
+              <Text style={styles.winSecondaryLabel}>Maybe Later</Text>
             </Pressable>
           </View>
         </View>
@@ -330,6 +387,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     bottom: 18,
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "center",
     left: 0,
     position: "absolute",
@@ -422,5 +480,8 @@ const styles = StyleSheet.create({
   },
   winButtonPressed: {
     opacity: 0.82,
+  },
+  winButtonDisabled: {
+    opacity: 0.42,
   },
 })

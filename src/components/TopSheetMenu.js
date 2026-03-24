@@ -26,7 +26,8 @@ function MenuToggleRow({ label, onPress, value }) {
     <View style={styles.toggleRow}>
       <Text style={styles.toggleLabel}>{label}</Text>
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole="switch"
+        accessibilityState={{ checked: value }}
         onPress={onPress}
         style={({ pressed }) => [
           value ? styles.toggleButtonActive : styles.toggleButtonInactive,
